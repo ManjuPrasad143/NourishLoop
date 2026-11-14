@@ -1,0 +1,30 @@
+# Dependency directories
+node_modules/
+
+dist/
+build/
+*.log
+/frontend/lint_output.txt
+/frontend/lint_status.json
+/frontend/test_out.txt
+/frontend/final-test-results.txt
+/backend/compact-lint.txt
+/backend/lint-results.txt
+/backend/test-results.txt
+/backend/test_output.txt
+
+# Environment Variables (CRITICAL)
+.env
+.env.local
+.env.*.local
+
+# Docker volumes (if they were created locally)
+postgres_data/
+
+# IDE settings
+.vscode/
+.idea/
+*.DS_Store
+
+# Ignore database backups
+/backups/
