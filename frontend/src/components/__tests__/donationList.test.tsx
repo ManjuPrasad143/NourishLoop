@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, prefer-const, @typescript-eslint/no-unused-vars */
 import { render, screen, waitFor } from '@testing-library/react';
 import NGODashboard from '../../pages/dashboard/NGODashboard';
-import { getDonations } from '../../services/api';
+import { getMyDonations } from '../../services/api';
 
 vi.mock('react-router-dom', () => ({
     Link: ({ to, children }: any) => <a href={to}>{children}</a>,
@@ -12,7 +12,7 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('../../services/api', () => ({
-    getDonations: vi.fn(),
+    getMyDonations: vi.fn(),
     claimDonation: vi.fn(),
 }));
 
@@ -60,7 +60,7 @@ describe('DonationList Rendering', () => {
             },
         ];
 
-        (getDonations as any).mockResolvedValue(mockDonations);
+        (getMyDonations as any).mockResolvedValue(mockDonations);
 
         render(<NGODashboard />);
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, prefer-const, @typescript-eslint/no-unused-vars */
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import NGODashboard from '../../pages/dashboard/NGODashboard';
-import { getDonations, claimDonation } from '../../services/api';
+import { getMyDonations, claimDonation } from '../../services/api';
 
 vi.mock('react-router-dom', () => ({
     Link: ({ to, children }: any) => <a href={to}>{children}</a>,
@@ -12,7 +12,7 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('../../services/api', () => ({
-    getDonations: vi.fn(),
+    getMyDonations: vi.fn(),
     claimDonation: vi.fn(),
 }));
 
@@ -48,7 +48,7 @@ describe('ClaimDonation UI Flows', () => {
         };
 
         // First API call renders an available item
-        (getDonations as any).mockResolvedValueOnce([freshPayload]);
+        (getMyDonations as any).mockResolvedValue([freshPayload]);
 
         render(<NGODashboard />);
 
@@ -67,7 +67,7 @@ describe('ClaimDonation UI Flows', () => {
         });
 
         // Setup backend to return the item as CLAIMED next time around ensuring UI state refresh natively
-        (getDonations as any).mockResolvedValueOnce([
+        (getMyDonations as any).mockResolvedValue([
             { ...freshPayload, status: 'CLAIMED' },
         ]);
         (claimDonation as any).mockResolvedValueOnce({ success: true });
