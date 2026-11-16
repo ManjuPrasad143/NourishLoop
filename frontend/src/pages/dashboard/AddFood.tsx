@@ -21,6 +21,12 @@ interface LatLng {
     lng: number
 }
 
+function toLocalDateTime(date: Date) {
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, 16)
+}
+
 function LocationMarker({ position, setPosition }: { position: LatLng | null; setPosition: (pos: LatLng) => void }) {
     useMapEvents({
         click(e) {
@@ -56,9 +62,10 @@ export default function AddFood() {
         quantity: '',
         unit: 'kg',
         description: '',
+        address: '',
         keptCovered: false,
         containerClean: false,
-        preparationTime: '',
+        preparationTime: toLocalDateTime(new Date()),
     })
 
     const user = JSON.parse(localStorage.getItem('user') || '{}')
@@ -74,12 +81,12 @@ export default function AddFood() {
     }, [imagePreviews])
 
     const foodTypes = [
-        { id: 'cooked', label: t('cooked'), expiryHours: 4, icon: '🍛' },
-        { id: 'raw', label: t('raw'), expiryHours: 24, icon: '🥬' },
-        { id: 'packaged', label: t('packaged'), expiryHours: 720, icon: '📦' },
-        { id: 'fruits', label: t('fruits'), expiryHours: 48, icon: '🍎' },
-        { id: 'bakery', label: t('bakery'), expiryHours: 24, icon: '🥖' },
-        { id: 'dairy', label: t('dairy'), expiryHours: 48, icon: '🥛' },
+        { id: 'cooked', label: t('cooked'), expiryHours: 4, minimumRemainingHours: 2, icon: '🍛' },
+        { id: 'raw', label: t('raw'), expiryHours: 24, minimumRemainingHours: 0, icon: '🥬' },
+        { id: 'packaged', label: t('packaged'), expiryHours: 720, minimumRemainingHours: 0, icon: '📦' },
+        { id: 'fruits', label: t('fruits'), expiryHours: 48, minimumRemainingHours: 0, icon: '🍎' },
+        { id: 'bakery', label: t('bakery'), expiryHours: 24, minimumRemainingHours: 0, icon: '🥖' },
+        { id: 'dairy', label: t('dairy'), expiryHours: 48, minimumRemainingHours: 2, icon: '🥛' },
     ]
 
     const units = [
@@ -155,18 +162,41 @@ export default function AddFood() {
 
         // Check if preparation time is in the future
         if (prepTime > now) {
-            return { expired: false, futureTime: true, hours: 0, minutes: 0 }
+            return {
+                expired: false,
+                futureTime: true,
+                insufficientWindow: false,
+                minimumRemainingHours: selectedFoodType.minimumRemainingHours,
+                hours: 0,
+                minutes: 0,
+            }
         }
 
         const expiryTime = new Date(prepTime.getTime() + selectedFoodType.expiryHours * 60 * 60 * 1000)
         const remaining = expiryTime.getTime() - now.getTime()
 
-        if (remaining <= 0) return { expired: true, futureTime: false, hours: 0, minutes: 0 }
+        if (remaining <= 0) {
+            return {
+                expired: true,
+                futureTime: false,
+                insufficientWindow: false,
+                minimumRemainingHours: selectedFoodType.minimumRemainingHours,
+                hours: 0,
+                minutes: 0,
+            }
+        }
 
         const hours = Math.floor(remaining / (1000 * 60 * 60))
         const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60))
 
-        return { expired: false, futureTime: false, hours, minutes }
+        return {
+            expired: false,
+            futureTime: false,
+            insufficientWindow: remaining < selectedFoodType.minimumRemainingHours * 60 * 60 * 1000,
+            minimumRemainingHours: selectedFoodType.minimumRemainingHours,
+            hours,
+            minutes,
+        }
     }
 
     const timeStatus = getRemainingTime()
@@ -184,6 +214,11 @@ export default function AddFood() {
         // Validate time safety
         if (timeStatus?.expired) {
             setError(t('exceededSafeWindow', { foodType: formData.foodType, hours: selectedFoodType?.expiryHours }))
+            return
+        }
+
+        if (timeStatus?.insufficientWindow) {
+            setError(t('minimumSafeWindow', { hours: timeStatus.minimumRemainingHours }))
             return
         }
 
@@ -211,6 +246,7 @@ export default function AddFood() {
                 quantity: formData.quantity,
                 unit: formData.unit,
                 description: formData.description,
+                address: formData.address,
                 donorId,
                 donorName,
                 donorTrustScore: user.trustScore || 0,
@@ -248,6 +284,7 @@ export default function AddFood() {
         donorName &&
         timeStatus &&
         !timeStatus.expired &&
+        !timeStatus.insufficientWindow &&
         !timeStatus.futureTime
     const incompleteRequirements = [
         !formData.foodType && t('foodType'),
@@ -329,9 +366,11 @@ export default function AddFood() {
                         name="preparationTime"
                         value={formData.preparationTime}
                         onChange={handleChange}
+                        max={toLocalDateTime(new Date())}
                         required
                         className="w-full bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-3 text-gray-900 dark:text-white focus:border-emerald-500 focus:outline-none"
                     />
+                    <p className="mt-2 text-xs text-gray-500 dark:text-slate-500">{t('preparationTimeHint')}</p>
                     {timeStatus?.futureTime && formData.preparationTime && (
                         <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 text-amber-400" />
@@ -340,7 +379,7 @@ export default function AddFood() {
                             </p>
                         </div>
                     )}
-                    {timeStatus && !timeStatus.expired && !timeStatus.futureTime && formData.preparationTime && (
+                    {timeStatus && !timeStatus.expired && !timeStatus.insufficientWindow && !timeStatus.futureTime && formData.preparationTime && (
                         <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                             <p className="text-sm text-emerald-400">
@@ -353,6 +392,14 @@ export default function AddFood() {
                             <AlertTriangle className="w-4 h-4 text-red-400" />
                             <p className="text-sm text-red-400">
                                 {t('exceededSafeLimits')}
+                            </p>
+                        </div>
+                    )}
+                    {timeStatus?.insufficientWindow && (
+                        <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                            <p className="text-sm text-amber-400">
+                                {t('minimumSafeWindow', { hours: timeStatus.minimumRemainingHours })}
                             </p>
                         </div>
                     )}
@@ -412,6 +459,18 @@ export default function AddFood() {
                             placeholder={t('descriptionPlaceholder')}
                             rows={3}
                             className="w-full bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-3 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-none resize-none"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm text-gray-500 dark:text-slate-400 mb-2">{t('address')}</label>
+                        <input
+                            type="text"
+                            name="address"
+                            value={formData.address}
+                            onChange={handleChange}
+                            placeholder={t('pickupAddressPlaceholder')}
+                            className="w-full bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-3 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-none"
                         />
                     </div>
 

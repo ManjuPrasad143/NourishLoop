@@ -70,6 +70,13 @@ describe('AddFood - Food Donation Form', () => {
     expect(screen.getByTestId('map')).toHaveAttribute('data-center', '12.2958,76.6394')
   })
 
+  it('defaults preparation time to the current local time', () => {
+    const { container } = render(<AddFood />)
+    const preparationTime = container.querySelector<HTMLInputElement>('[name="preparationTime"]')
+    expect(preparationTime?.value).toBeTruthy()
+    expect(new Date(preparationTime!.value).getTime()).toBeLessThanOrEqual(Date.now())
+  })
+
   it('should have image upload input for food photos', () => {
     const { container } = render(<AddFood />)
     const fileInputs = container.querySelectorAll('input[type="file"]')
@@ -123,5 +130,20 @@ describe('AddFood - Food Donation Form', () => {
       }),
       [],
     )
+  })
+
+  it('explains and blocks cooked food with less than two safe hours remaining', () => {
+    const { container } = render(<AddFood />)
+    fireEvent.click(screen.getByRole('button', { name: /cooked/i }))
+    const preparationTime = container.querySelector<HTMLInputElement>('[name="preparationTime"]')!
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    const localInputValue = new Date(threeHoursAgo.getTime() - threeHoursAgo.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 16)
+    fireEvent.change(preparationTime, { target: { value: localInputValue } })
+
+    expect(screen.getByText('minimumSafeWindow')).toBeInTheDocument()
+    expect(screen.queryByText(/safeFor/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'publishDonation' })).toBeDisabled()
   })
 })

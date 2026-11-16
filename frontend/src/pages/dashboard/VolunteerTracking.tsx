@@ -1,22 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigation2, Timer, Loader2, RefreshCw, MapPin, PlayCircle, PauseCircle, CheckCircle2 } from 'lucide-react'
 import { getMyDeliveries } from '../../services/api'
+import type { Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 import { toast } from 'sonner'
-
-interface Delivery {
-  id: string
-  name: string
-  address: string
-  latitude: number
-  longitude: number
-  status: string
-  donorName: string
-  claimedById: string | null
-  volunteerId: string | null
-  createdAt: string
-  donor?: { organizationName?: string; name?: string; address?: string }
-}
 
 const statusLabel: Record<string, string> = {
   CLAIMED: 'Awaiting Pickup',
@@ -31,7 +18,7 @@ export default function VolunteerTracking() {
   const user = JSON.parse(localStorage.getItem('user') || '{}') as { id?: string }
   const userId = user.id || ''
 
-  const [deliveries, setDeliveries] = useState<Delivery[]>([])
+  const [deliveries, setDeliveries] = useState<Donation[]>([])
   const [loading, setLoading] = useState(true)
   const [isSharing, setIsSharing] = useState(false)
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null)
@@ -199,7 +186,7 @@ export default function VolunteerTracking() {
                   <p className="text-xs text-slate-400">From: {d.donorName}</p>
                   <p className="text-xs text-slate-500 mt-1 truncate">
                     <MapPin className="w-3 h-3 inline mr-1" />
-                    {d.address || 'No address'}
+                    {d.location?.address || 'No address'}
                   </p>
                   <p className="text-xs text-slate-600 mt-1">
                     {new Date(d.createdAt).toLocaleDateString()}

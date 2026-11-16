@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getDonations } from '../../services/api'
+import { getMyDonations } from '../../services/api'
 import type { Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 import { TrendingUp, BarChart2, Package } from 'lucide-react'
@@ -224,7 +224,7 @@ export default function History() {
     const load = async () => {
         setLoading(true)
         try {
-            const data = await getDonations()
+            const data = await getMyDonations()
             setDonations(data)
         } finally {
             setLoading(false)

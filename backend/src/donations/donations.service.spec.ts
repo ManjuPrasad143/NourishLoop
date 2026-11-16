@@ -28,7 +28,7 @@ const mockDonationRepo = {
   save: jest.fn(),
   find: jest.fn(),
   manager: {
-    transaction: jest.fn((cb: any) => cb(mockEntityManager)),
+    transaction: jest.fn(async (cb: any) => cb(mockEntityManager)),
   },
   // 2. Return the SAME object every time
   createQueryBuilder: jest.fn(() => mockQueryBuilder),
@@ -36,6 +36,7 @@ const mockDonationRepo = {
 
 const mockUserRepo = {
   findOne: jest.fn(),
+  find: jest.fn().mockResolvedValue([]),
   save: jest.fn(),
 };
 
@@ -49,6 +50,7 @@ const mockCacheManager = {
 const mockEventsGateway = {
   emitDonationCreated: jest.fn(),
   emitDonationClaimed: jest.fn(),
+  emitVolunteerAssigned: jest.fn(),
   emitNotification: jest.fn(),
 };
 
@@ -183,6 +185,61 @@ describe('DonationsService Unit Tests', () => {
       const result = await service.claim('d1', {} as any, 'u1');
       expect(result.status).toBe(DonationStatus.CLAIMED);
     });
+
+    it('persists and emits an assigned volunteer after the claim transaction completes', async () => {
+      const donation = {
+        id: 'd1',
+        name: 'Fresh meals',
+        donorId: 'donor1',
+        latitude: 12.3,
+        longitude: 76.6,
+        quantity: 10,
+        status: DonationStatus.AVAILABLE,
+      };
+      const ngo = {
+        id: 'ngo1',
+        name: 'Food Bank',
+        role: UserRole.NGO,
+        isVerified: true,
+        currentIntakeLoad: 0,
+        dailyIntakeCapacity: null,
+        badges: [],
+      };
+      mockEntityManager.findOne
+        .mockResolvedValueOnce(donation)
+        .mockResolvedValueOnce(ngo);
+      mockEntityManager.save.mockImplementation((entity) =>
+        Promise.resolve(entity),
+      );
+      mockUserRepo.find.mockResolvedValueOnce([
+        { id: 'volunteer1', latitude: 12.31, longitude: 76.61 },
+      ]);
+
+      let transactionCompleted = false;
+      mockDonationRepo.manager.transaction.mockImplementationOnce(
+        async (callback: any) => {
+          const result = await callback(mockEntityManager);
+          transactionCompleted = true;
+          return result;
+        },
+      );
+      mockEventsGateway.emitVolunteerAssigned.mockImplementationOnce(() => {
+        expect(transactionCompleted).toBe(true);
+      });
+
+      const result = await service.claim('d1', {} as any, 'ngo1');
+
+      expect(result.volunteerId).toBe('volunteer1');
+      expect(mockEntityManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'd1', volunteerId: 'volunteer1' }),
+      );
+      expect(mockEventsGateway.emitVolunteerAssigned).toHaveBeenCalledWith(
+        expect.objectContaining({
+          volunteerId: 'volunteer1',
+          donationId: 'd1',
+        }),
+      );
+    });
   });
 
   // --- TEST SUITE 3: VOLUNTEER WORKFLOW ---
@@ -193,6 +250,7 @@ describe('DonationsService Unit Tests', () => {
         status: DonationStatus.CLAIMED,
         claimedById: 'ngo1',
         donorId: 'donor1',
+        volunteerId: 'vol1',
       };
       const volunteer = { id: 'vol1', role: UserRole.VOLUNTEER };
       mockEntityManager.findOne
@@ -225,6 +283,23 @@ describe('DonationsService Unit Tests', () => {
         service.updateStatus('d1', DonationStatus.PICKED_UP, 'rando1'),
       ).rejects.toThrow(/not authorized/);
     });
+
+    it('should reject a volunteer who is not assigned to the donation', async () => {
+      const donation = {
+        id: 'd1',
+        status: DonationStatus.CLAIMED,
+        claimedById: 'ngo1',
+        volunteerId: 'vol2',
+      };
+      const volunteer = { id: 'vol1', role: UserRole.VOLUNTEER };
+      mockEntityManager.findOne
+        .mockResolvedValueOnce(donation)
+        .mockResolvedValueOnce(volunteer);
+
+      await expect(
+        service.updateStatus('d1', DonationStatus.PICKED_UP, 'vol1'),
+      ).rejects.toThrow(/not authorized/);
+    });
   });
 
   // --- TEST SUITE 4: GEOSPATIAL DISCOVERY ---
@@ -242,6 +317,42 @@ describe('DonationsService Unit Tests', () => {
         expect.stringContaining('6371 * acos'),
         'distance',
       );
+    });
+
+    describe('findMine (Scoped visibility)', () => {
+      it('returns only the donor’s donations and claimant contact details', async () => {
+        const donation = {
+          id: 'd1',
+          donorId: 'donor1',
+          claimedById: 'ngo1',
+          status: DonationStatus.CLAIMED,
+        };
+        mockUserRepo.findOne.mockResolvedValueOnce({
+          id: 'donor1',
+          role: UserRole.DONOR,
+        });
+        mockDonationRepo.find.mockResolvedValueOnce([donation]);
+        mockUserRepo.find.mockResolvedValueOnce([
+          {
+            id: 'ngo1',
+            name: 'Organization User',
+            organizationName: 'Community Kitchen',
+            phone: '555-0100',
+            address: 'Mysore',
+          },
+        ]);
+
+        const result = await service.findMine('donor1');
+
+        expect(mockDonationRepo.find).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { donorId: 'donor1' } }),
+        );
+        expect(result[0].contact).toEqual({
+          name: 'Community Kitchen',
+          phone: '555-0100',
+          address: 'Mysore',
+        });
+      });
     });
 
     it('should use standard find() when no location is provided', async () => {

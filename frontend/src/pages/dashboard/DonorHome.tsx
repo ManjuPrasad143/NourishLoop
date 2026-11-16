@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { getDonations, type Donation } from '../../services/api'
+import { getMyDonations, type Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 import { PlusCircle, Map, Clock, TrendingUp, AlertTriangle, X, Image as ImageIcon, Shield, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function DonorHome() {
   const { t } = useTranslation()
@@ -17,11 +18,12 @@ export default function DonorHome() {
   const load = async () => {
     setLoading(true)
     try {
-      const data = await getDonations({ 
-        role: 'donor',
-        userId: user.id 
-      })
+      const data = await getMyDonations()
       setDonations(data)
+    } catch (error) {
+      toast.error('Unable to load your donations', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     } finally {
       setLoading(false)
     }
@@ -330,6 +332,35 @@ export default function DonorHome() {
                       <span>Trust: {selectedDonation.donorTrustScore?.toFixed(1) || 'N/A'}</span>
                     </div>
                   </div>
+                </div>
+
+                {selectedDonation.contact && (
+                  <div className="p-3 bg-gray-100/80 dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-800">
+                    <p className="text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-1">{t('contact')}</p>
+                    <p className="text-sm text-gray-900 dark:text-white font-medium">{selectedDonation.contact.name}</p>
+                    {selectedDonation.contact.phone && (
+                      <a className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline" href={`tel:${selectedDonation.contact.phone}`}>
+                        {selectedDonation.contact.phone}
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                <div className="p-3 bg-gray-100/80 dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-800">
+                  <p className="text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-1">{t('pickupLocation')}</p>
+                  <p className="text-sm text-gray-700 dark:text-slate-300">{selectedDonation.location.address}</p>
+                  <a
+                    className="mt-2 inline-flex text-sm text-emerald-600 dark:text-emerald-400 hover:underline"
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                      selectedDonation.location.lat !== 0 || selectedDonation.location.lng !== 0
+                        ? `${selectedDonation.location.lat},${selectedDonation.location.lng}`
+                        : selectedDonation.location.address,
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('directions')}
+                  </a>
                 </div>
 
                 {/* Description */}

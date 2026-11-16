@@ -46,6 +46,11 @@ export interface Donation {
   donorId: string;
   donorName: string;
   donorTrustScore: number;
+  contact?: {
+    name: string;
+    phone?: string;
+    address?: string;
+  };
   location: {
     lat: number;
     lng: number;
@@ -63,6 +68,7 @@ export interface Donation {
   claimedBy?: string;
   volunteerId?: string;
   imageUrls: string[];
+  deliveredAt?: Date;
 }
 
 export interface User {
@@ -190,6 +196,9 @@ export const updateUserProfile = async (data: Partial<User>) => {
 
 export interface RawDonation {
   id?: string | number;
+  name?: string;
+  unit?: string;
+  donorId?: string;
   quantity?: string | number;
   status?: string;
   latitude?: string | number;
@@ -205,13 +214,59 @@ export interface RawDonation {
   deliveredAt?: string | Date;
   imageUrls?: string | string[];
   volunteerId?: string;
+  contact?: {
+    name?: string;
+    phone?: string;
+    address?: string;
+  };
   [key: string]: unknown;
 }
 
+const normalizeDonations = (rawList: RawDonation[]): Donation[] =>
+  rawList.map((item) => ({
+    ...item,
+    id: String(item.id),
+    name: item.name || 'Food donation',
+    unit: item.unit || '',
+    donorId: item.donorId || '',
+    quantity: String(item.quantity),
+    status: (item.status || 'AVAILABLE') as DonationStatus,
+    location: {
+      lat: Number(item.latitude) || 0,
+      lng: Number(item.longitude) || 0,
+      address: item.address || 'Unknown Location',
+    },
+    donorName: item.donorName || 'Community Donor',
+    donorTrustScore: Number(item.donorTrustScore) || 5.0,
+    contact: item.contact?.name
+      ? {
+          name: item.contact.name,
+          phone: item.contact.phone,
+          address: item.contact.address,
+        }
+      : undefined,
+    hygiene:
+      typeof item.hygiene === 'string'
+        ? JSON.parse(item.hygiene)
+        : (item.hygiene || { keptCovered: true, containerClean: true }),
+    foodType: (item.foodType || 'cooked') as FoodType,
+    expiryTime: item.expiryTime
+      ? new Date(item.expiryTime)
+      : new Date(Date.now() + 24 * 60 * 60 * 1000),
+    preparationTime: item.preparationTime
+      ? new Date(item.preparationTime)
+      : new Date(),
+    createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+    deliveredAt: item.deliveredAt ? new Date(item.deliveredAt) : undefined,
+    imageUrls: Array.isArray(item.imageUrls)
+      ? item.imageUrls
+      : typeof item.imageUrls === 'string' && item.imageUrls
+        ? item.imageUrls.split(',')
+        : [],
+  }));
+
 export const getDonations = async (filters?: {
   status?: string[];
-  role?: string;
-  userId?: string;
 }) => {
   const params: Record<string, string> = {};
   if (filters?.status?.length) {
@@ -226,36 +281,7 @@ export const getDonations = async (filters?: {
       ? response.data.data
       : [];
 
-  let data = rawList.map((item: RawDonation) => ({
-    ...item,
-    id: String(item.id),
-    quantity: String(item.quantity),
-    status: item.status || 'AVAILABLE',
-    location: {
-      lat: Number(item.latitude) || 0,
-      lng: Number(item.longitude) || 0,
-      address: item.address || 'Unknown Location',
-    },
-    donorName: item.donorName || 'Community Donor',
-    donorTrustScore: Number(item.donorTrustScore) || 5.0,
-    hygiene:
-      typeof item.hygiene === 'string'
-        ? JSON.parse(item.hygiene)
-        : (item.hygiene || { keptCovered: true, containerClean: true }),
-    foodType: item.foodType || 'cooked',
-    expiryTime: item.expiryTime
-      ? new Date(item.expiryTime)
-      : new Date(Date.now() + 24 * 60 * 60 * 1000),
-    preparationTime: item.preparationTime
-      ? new Date(item.preparationTime)
-      : new Date(),
-    createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
-    imageUrls: Array.isArray(item.imageUrls)
-      ? item.imageUrls
-      : typeof item.imageUrls === 'string' && item.imageUrls
-        ? item.imageUrls.split(',')
-        : [],
-  }));
+  let data = normalizeDonations(rawList);
 
   // Filter out expired donations (by status or by time)
   data = data.filter((d: Donation) => {
@@ -267,12 +293,23 @@ export const getDonations = async (filters?: {
   return data;
 };
 
+export const getMyDonations = async (): Promise<Donation[]> => {
+  const response = await api.get('/donations/mine');
+  const rawList = Array.isArray(response.data)
+    ? response.data
+    : Array.isArray(response.data?.data)
+      ? response.data.data
+      : [];
+  return normalizeDonations(rawList);
+};
+
 export interface CreateDonationPayload {
   name: string;
   foodType: string;
   quantity: string | number;
   unit: string;
   description?: string;
+  address?: string;
   preparationTime: Date | string;
   expiryTime: Date | string;
   donorId?: string;
@@ -290,6 +327,9 @@ export const createDonation = async (data: CreateDonationPayload, images: File[]
   formData.append('quantity', data.quantity.toString());
   formData.append('unit', data.unit);
   formData.append('description', data.description || '');
+  if (data.address?.trim()) {
+    formData.append('address', data.address.trim());
+  }
 
   const toISO = (val: Date | string) =>
     val instanceof Date ? val.toISOString() : val;
@@ -433,35 +473,9 @@ export const getLeaderboard = async (scope: string = 'all', role?: string): Prom
   }
 };
 
-export const getCompletedTrips = async (userId: string): Promise<Donation[]> => {
-  const response = await api.get('/donations');
-  const rawList = Array.isArray(response.data)
-    ? response.data
-    : Array.isArray(response.data?.data)
-      ? response.data.data
-      : [];
-  return rawList
-    .filter((item: RawDonation) => item.volunteerId === userId && item.status === 'DELIVERED')
-    .map((item: RawDonation) => ({
-      ...item,
-      id: String(item.id),
-      quantity: String(item.quantity),
-      status: item.status,
-      location: {
-        lat: Number(item.latitude) || 0,
-        lng: Number(item.longitude) || 0,
-        address: item.address || 'Unknown Location',
-      },
-      donorName: item.donorName || 'Community Donor',
-      donorTrustScore: Number(item.donorTrustScore) || 5.0,
-      hygiene: typeof item.hygiene === 'string' ? JSON.parse(item.hygiene) : (item.hygiene || {}),
-      foodType: item.foodType || 'cooked',
-      expiryTime: item.expiryTime ? new Date(item.expiryTime) : new Date(),
-      preparationTime: item.preparationTime ? new Date(item.preparationTime) : new Date(),
-      createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
-      deliveredAt: item.deliveredAt ? new Date(item.deliveredAt) : undefined,
-      imageUrls: Array.isArray(item.imageUrls) ? item.imageUrls : [],
-    }));
+export const getCompletedTrips = async (): Promise<Donation[]> => {
+  const donations = await getMyDonations();
+  return donations.filter((donation) => donation.status === 'DELIVERED');
 };
 
 export const toggleAvailability = async (isAvailable: boolean): Promise<User> => {
@@ -505,8 +519,12 @@ export const supportAPI = {
 // ── Volunteer deliveries ────────────────────────────────────────────────────
 export const getMyDeliveries = async () => {
   const res = await api.get('/donations/my-deliveries');
-  const raw = Array.isArray(res.data) ? res.data : [];
-  return raw;
+  const raw = Array.isArray(res.data)
+    ? res.data
+    : Array.isArray(res.data?.data)
+      ? res.data.data
+      : [];
+  return normalizeDonations(raw);
 };
 
 // Feedback API

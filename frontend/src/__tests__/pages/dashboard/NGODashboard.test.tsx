@@ -11,8 +11,8 @@ vi.mock('react-router-dom', () => ({
 }))
 
 vi.mock('../../../services/api', () => ({
-  getDonations: vi.fn().mockResolvedValue([
-    { id: '1', status: 'available', foodType: 'cooked' }
+  getMyDonations: vi.fn().mockResolvedValue([
+    { id: '1', status: 'AVAILABLE', foodType: 'cooked' }
   ]),
   claimDonation: vi.fn(),
 }))

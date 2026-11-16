@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, prefer-const, @typescript-eslint/no-unused-vars */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import NearExpiryAlerts from '../../../pages/dashboard/NearExpiryAlerts'
-import { getDonations } from '../../../services/api'
+import { getMyDonations } from '../../../services/api'
 
 describe('NearExpiryAlerts', () => {
   beforeEach(() => {
@@ -10,7 +10,7 @@ describe('NearExpiryAlerts', () => {
   })
 
   it('renders near-expiry alerts with data', async () => {
-    vi.mocked(getDonations).mockResolvedValue([
+    vi.mocked(getMyDonations).mockResolvedValue([
       {
         id: '1',
         name: 'Cooked Rice Meal',
@@ -46,7 +46,7 @@ describe('NearExpiryAlerts', () => {
   })
 
   it('filters by critical urgency', async () => {
-    vi.mocked(getDonations).mockResolvedValue([
+    vi.mocked(getMyDonations).mockResolvedValue([
       {
         id: '1',
         name: 'Urgent Food',

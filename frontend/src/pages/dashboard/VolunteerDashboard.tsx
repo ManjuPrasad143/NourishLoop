@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  getDonations,
+  getMyDeliveries,
   updateDonationStatus,
   markAsDelivered,
   getUserProfile,
@@ -37,8 +37,14 @@ function getTimeRemaining(expiryTime: Date) {
 }
 
 function openGoogleMaps(address: string, lat?: number, lng?: number) {
-  const dest = lat && lng ? `${lat},${lng}` : encodeURIComponent(address)
-  window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest}`, '_blank')
+  const hasCoordinates =
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    (lat !== 0 || lng !== 0)
+  const dest = hasCoordinates
+    ? `${lat},${lng}`
+    : encodeURIComponent(address)
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest}`, '_blank', 'noopener,noreferrer')
 }
 
 
@@ -256,6 +262,15 @@ function TaskCard({
               </div>
             )}
 
+            {donation.contact?.phone && (
+              <a
+                href={`tel:${donation.contact.phone}`}
+                className="mt-1 inline-flex text-xs text-emerald-600 dark:text-emerald-400 hover:underline"
+              >
+                {t('contact')}: {donation.contact.name} · {donation.contact.phone}
+              </a>
+            )}
+
             {timeLeft.urgent && !timeLeft.expired && (
               <div className="flex items-center gap-1 mt-1.5">
                 <AlertTriangle className="w-3 h-3 text-red-400" />
@@ -310,16 +325,16 @@ function TaskCard({
 
 
 
-function CompletedTrips({ userId, t }: { userId: string; t: (key: string) => string }) {
+function CompletedTrips({ t }: { t: (key: string) => string }) {
   const [trips, setTrips] = useState<Donation[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getCompletedTrips(userId)
+    getCompletedTrips()
       .then(setTrips)
       .catch(() => setTrips([]))
       .finally(() => setLoading(false))
-  }, [userId])
+  }, [])
 
   if (loading) return <div className="p-8 text-center text-gray-500 dark:text-slate-500 text-sm">{t('loading')}</div>
 
@@ -369,6 +384,7 @@ function CompletedTrips({ userId, t }: { userId: string; t: (key: string) => str
 function DetailModal({
   donation,
   processingId,
+  canManageDelivery,
   onPickup,
   onDelivery,
   onClose,
@@ -376,6 +392,7 @@ function DetailModal({
 }: {
   donation: Donation
   processingId: string | null
+  canManageDelivery: boolean
   onPickup: (id: string) => void
   onDelivery: (id: string) => void
   onClose: () => void
@@ -399,6 +416,18 @@ function DetailModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {donation.contact && (
+          <div className="bg-gray-50 dark:bg-slate-800/50 rounded-lg p-3.5">
+            <p className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">{t('contact')}</p>
+            <p className="mt-1 text-sm text-gray-900 dark:text-white">{donation.contact.name}</p>
+            {donation.contact.phone && (
+              <a className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline" href={`tel:${donation.contact.phone}`}>
+                {donation.contact.phone}
+              </a>
+            )}
+          </div>
+        )}
 
         {/* Image */}
         <div className="relative w-full h-48 bg-gray-50 dark:bg-slate-950">
@@ -481,7 +510,7 @@ function DetailModal({
 
           {/* Action buttons */}
           <div className="flex gap-3 pt-1">
-            {donation.status === 'CLAIMED' && (
+            {canManageDelivery && donation.status === 'CLAIMED' && (
               <button
                 onClick={() => { onPickup(donation.id); onClose() }}
                 disabled={isProcessing}
@@ -491,7 +520,7 @@ function DetailModal({
                 {isProcessing ? t('processing') : t('confirmPickup')}
               </button>
             )}
-            {donation.status === 'PICKED_UP' && (
+            {canManageDelivery && donation.status === 'PICKED_UP' && (
               <button
                 onClick={() => { onDelivery(donation.id); onClose() }}
                 disabled={isProcessing}
@@ -525,12 +554,15 @@ export default function VolunteerDashboard() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await getDonations({ status: ['CLAIMED', 'PICKED_UP'] })
+      const all = await getMyDeliveries()
       setDonations(all.filter((d: Donation) =>
         d.status === 'CLAIMED' || d.status === 'PICKED_UP'
       ))
-    } catch {
-      // silently fail
+    } catch (error) {
+      const message = error as { response?: { data?: { message?: string } }; message?: string }
+      toast.error('Unable to load assigned deliveries', {
+        description: message.response?.data?.message || message.message || 'Please try again.',
+      })
     } finally {
       setLoading(false)
     }
@@ -767,7 +799,7 @@ export default function VolunteerDashboard() {
             </>
           )}
 
-          {activeTab === 'trips' && <CompletedTrips userId={user.id} t={t} />}
+          {activeTab === 'trips' && <CompletedTrips t={t} />}
         </div>
       </div>
 
@@ -776,6 +808,7 @@ export default function VolunteerDashboard() {
         <DetailModal
           donation={selectedDonation}
           processingId={processingId}
+          canManageDelivery={user.role?.toLowerCase() === 'volunteer'}
           onPickup={handleConfirmPickup}
           onDelivery={handleConfirmDelivery}
           onClose={() => setSelectedDonation(null)}

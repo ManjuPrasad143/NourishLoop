@@ -218,8 +218,11 @@ export const enStrings: Record<string, string> = {
   addFoodDonation: 'Add Food Donation',
   shareSurplusFoodNeed: 'Share surplus food with those in need',
   prepTimeError: 'Preparation time cannot be in the future',
+  preparationTimeHint: 'Times use your local timezone. The current time is selected by default; adjust it if needed.',
+  minimumSafeWindow: 'This food needs at least {{hours}} safe hours remaining. Choose a newer preparation time.',
   exceededSafeWindow: 'This {{foodType}} food has exceeded the safe consumption window of {{hours}} hours',
   selectPickupLocation: 'Please select a pickup location on the map',
+  pickupAddressPlaceholder: 'Street, building, or pickup instructions (optional)',
   missingDonorInfo: 'Missing donor information. Please sign in again.',
   exceededSafeLimits: 'This food has exceeded safe consumption limits',
   foodType: 'Food Type',
@@ -432,6 +435,7 @@ export const enStrings: Record<string, string> = {
   deliveryFailed: 'Failed to confirm delivery',
   badges: 'Badges',
   directions: 'Directions',
+  onlyNgoCanClaim: 'Only verified NGOs can claim food. Volunteers receive delivery tasks after an NGO claims it.',
 
   // Admin Dashboard
   pendingNGOs: 'Pending NGOs',

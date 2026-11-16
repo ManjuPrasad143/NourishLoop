@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, LessThanOrEqual } from 'typeorm';
@@ -242,11 +243,106 @@ export class DonationsService {
     }
   }
 
+  async findMine(userId: string) {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'role'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    let donations: Donation[];
+    switch (user.role) {
+      case UserRole.DONOR:
+        donations = await this.donationsRepository.find({
+          where: { donorId: userId },
+          order: { createdAt: 'DESC' },
+        });
+        break;
+      case UserRole.NGO:
+        donations = await this.donationsRepository.find({
+          where: [
+            { status: DonationStatus.AVAILABLE },
+            { claimedById: userId },
+          ],
+          order: { createdAt: 'DESC' },
+        });
+        break;
+      case UserRole.VOLUNTEER:
+        donations = await this.donationsRepository.find({
+          where: { volunteerId: userId },
+          order: { createdAt: 'DESC' },
+        });
+        break;
+      default:
+        donations = [];
+    }
+
+    const contactIds = [
+      ...new Set(
+        donations
+          .map((donation) => {
+            if (user.role === UserRole.DONOR && donation.donorId === userId) {
+              return donation.claimedById;
+            }
+            if (user.role === UserRole.NGO && donation.claimedById === userId) {
+              return donation.donorId;
+            }
+            if (
+              user.role === UserRole.VOLUNTEER &&
+              donation.volunteerId === userId
+            ) {
+              return donation.donorId;
+            }
+            return undefined;
+          })
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+
+    const contacts = contactIds.length
+      ? await this.usersRepository.find({
+          where: { id: In(contactIds) },
+          select: ['id', 'name', 'organizationName', 'phone', 'address'],
+        })
+      : [];
+    const contactsById = new Map(
+      contacts.map((contact) => [contact.id, contact]),
+    );
+
+    return donations.map((donation) => {
+      const contactId =
+        user.role === UserRole.DONOR
+          ? donation.claimedById
+          : user.role === UserRole.NGO && donation.claimedById === userId
+            ? donation.donorId
+            : user.role === UserRole.VOLUNTEER &&
+                donation.volunteerId === userId
+              ? donation.donorId
+              : undefined;
+      const contact = contactId ? contactsById.get(contactId) : undefined;
+
+      return {
+        ...donation,
+        contact: contact
+          ? {
+              name: contact.organizationName || contact.name,
+              phone: contact.phone || undefined,
+              address: contact.address || undefined,
+            }
+          : undefined,
+      };
+    });
+  }
+
   async claim(id: string, claimDto: ClaimDonationDto, userId: string) {
-    return await this.donationsRepository.manager.transaction(
+    const result = await this.donationsRepository.manager.transaction(
       async (transactionalEntityManager) => {
         const donation = await transactionalEntityManager.findOne(Donation, {
           where: { id },
+          lock: { mode: 'pessimistic_write' },
         });
         const user = await transactionalEntityManager.findOne(User, {
           where: { id: userId },
@@ -317,22 +413,16 @@ export class DonationsService {
         const newBadges = this.checkAndAwardBadges(user);
         if (newBadges.length > 0) {
           user.badges = [...new Set([...(user.badges || []), ...newBadges])];
-          for (const badge of newBadges) {
-            this.eventsGateway.emitNotification({
-              title: 'New Badge Earned!',
-              message: `Congratulations! You earned the ${badge} badge.`,
-              type: 'new_food_nearby',
-            });
-          }
         }
 
         await transactionalEntityManager.save(user);
         const saved = await transactionalEntityManager.save(donation);
+        let assignedVolunteer: User | undefined;
 
-        // Auto-assign nearest available volunteer
         try {
           const availableVolunteers = await this.usersRepository.find({
-            where: { role: UserRole.VOLUNTEER, isAvailable: true } as any,
+            where: { role: UserRole.VOLUNTEER, isAvailable: true },
+            select: ['id', 'latitude', 'longitude'],
           });
 
           if (availableVolunteers.length > 0) {
@@ -356,38 +446,58 @@ export class DonationsService {
               withDistance.sort((a, b) => a.dist - b.dist);
               assigned = withDistance[0].volunteer;
             }
-            const ngo = await this.usersRepository.findOne({
-              where: { id: userId },
-            });
-            this.eventsGateway.emitVolunteerAssigned({
-              volunteerId: assigned.id,
-              donationId: saved.id,
-              donationName: saved.name,
-              donorAddress: saved.address || 'See donation details',
-              ngoName: ngo?.organizationName || ngo?.name || 'NGO',
-            });
-            this.eventsGateway.emitNotification({
-              title: '🚗 Pickup Assignment',
-              message: `You've been assigned to pick up "${saved.name}". Check your dashboard!`,
-              type: 'pickup_assigned',
-            });
+            saved.volunteerId = assigned.id;
+            await transactionalEntityManager.save(saved);
+            assignedVolunteer = assigned;
           }
         } catch (e) {
           this.logger.warn('Auto-assign volunteer failed (non-critical):', e);
         }
 
-        this.eventsGateway.emitDonationClaimed(saved);
-
-        this.eventsGateway.emitNotification({
-          title: 'Donation Claimed',
-          message: `Your donation has been claimed by an NGO.`,
-          type: 'food_claimed',
-        });
-
-        await this.invalidateCache();
-        return saved;
+        return {
+          donation: saved,
+          assignedVolunteer,
+          ngoName: user.organizationName || user.name || 'NGO',
+          newBadges,
+        };
       },
     );
+
+    for (const badge of result.newBadges) {
+      this.eventsGateway.emitNotification({
+        title: 'New Badge Earned!',
+        message: `Congratulations! You earned the ${badge} badge.`,
+        type: 'new_food_nearby',
+        targetUserIds: [userId],
+      });
+    }
+
+    if (result.assignedVolunteer) {
+      this.eventsGateway.emitVolunteerAssigned({
+        volunteerId: result.assignedVolunteer.id,
+        donationId: result.donation.id,
+        donationName: result.donation.name,
+        donorAddress: result.donation.address || 'See donation details',
+        ngoName: result.ngoName,
+      });
+      this.eventsGateway.emitNotification({
+        title: '🚗 Pickup Assignment',
+        message: `You've been assigned to pick up "${result.donation.name}". Check your dashboard!`,
+        type: 'pickup_assigned',
+        targetUserIds: [result.assignedVolunteer.id],
+      });
+    }
+
+    this.eventsGateway.emitDonationClaimed(result.donation);
+    this.eventsGateway.emitNotification({
+      title: 'Donation Claimed',
+      message: `Your donation has been claimed by an NGO.`,
+      type: 'food_claimed',
+      targetUserIds: [result.donation.donorId],
+    });
+
+    await this.invalidateCache();
+    return result.donation;
   }
 
   async updateStatus(id: string, status: DonationStatus, userId: string) {
@@ -395,7 +505,6 @@ export class DonationsService {
       async (transactionalEntityManager) => {
         const donation = await transactionalEntityManager.findOne(Donation, {
           where: { id },
-          relations: ['donor'],
         });
 
         if (!donation) {
@@ -410,11 +519,24 @@ export class DonationsService {
           throw new NotFoundException('User not found');
         }
 
+        const oldStatus = donation.status;
+        const isAssignedVolunteer =
+          requestingUser.role === UserRole.VOLUNTEER &&
+          donation.volunteerId === userId;
+        const isClaimingNgo =
+          requestingUser.role === UserRole.NGO &&
+          donation.claimedById === userId;
         const isAuthorized =
-          donation.donorId === userId ||
-          donation.claimedById === userId ||
-          (requestingUser.role === UserRole.VOLUNTEER &&
-            donation.claimedById !== null);
+          (status === DonationStatus.PICKED_UP &&
+            oldStatus === DonationStatus.CLAIMED &&
+            isAssignedVolunteer) ||
+          (status === DonationStatus.DELIVERED &&
+            oldStatus === DonationStatus.PICKED_UP &&
+            isAssignedVolunteer) ||
+          (status === DonationStatus.AVAILABLE &&
+            (oldStatus === DonationStatus.CLAIMED ||
+              oldStatus === DonationStatus.PICKED_UP) &&
+            isClaimingNgo);
 
         if (!isAuthorized) {
           throw new BadRequestException(
@@ -422,15 +544,7 @@ export class DonationsService {
           );
         }
 
-        const oldStatus = donation.status;
-
         if (status === DonationStatus.DELIVERED) {
-          if (oldStatus === DonationStatus.DELIVERED) {
-            throw new BadRequestException(
-              'Donation already marked as delivered',
-            );
-          }
-
           if (donation.claimedById) {
             const claimedNgo = await transactionalEntityManager.findOne(User, {
               where: { id: donation.claimedById },
@@ -479,22 +593,23 @@ export class DonationsService {
             }
           }
 
-          if (donation.donor) {
-            const DONOR_KARMA = 30;
-            donation.donor.karmaPoints =
-              (donation.donor.karmaPoints || 0) + DONOR_KARMA;
+          if (donation.donorId) {
+            const donor = await transactionalEntityManager.findOne(User, {
+              where: { id: donation.donorId },
+            });
+            if (donor) {
+              const DONOR_KARMA = 30;
+              donor.karmaPoints = (donor.karmaPoints || 0) + DONOR_KARMA;
 
-            const donorNewBadges = this.checkAndAwardBadges(donation.donor);
-            if (donorNewBadges.length > 0) {
-              donation.donor.badges = [
-                ...new Set([
-                  ...(donation.donor.badges || []),
-                  ...donorNewBadges,
-                ]),
-              ];
+              const donorNewBadges = this.checkAndAwardBadges(donor);
+              if (donorNewBadges.length > 0) {
+                donor.badges = [
+                  ...new Set([...(donor.badges || []), ...donorNewBadges]),
+                ];
+              }
+
+              await transactionalEntityManager.save(donor);
             }
-
-            await transactionalEntityManager.save(donation.donor);
           }
 
           donation.status = DonationStatus.DELIVERED;
@@ -538,6 +653,7 @@ export class DonationsService {
           }
 
           donation.claimedById = null;
+          donation.volunteerId = null;
         }
 
         donation.status = status;
@@ -673,20 +789,21 @@ export class DonationsService {
   }
 
   async getVolunteerDeliveries(userId: string) {
-    return await this.donationsRepository.find({
-      where: [
-        {
-          volunteerId: userId,
-          status: In([DonationStatus.CLAIMED, DonationStatus.PICKED_UP]),
-        },
-        {
-          claimedById: userId,
-          status: In([DonationStatus.CLAIMED, DonationStatus.PICKED_UP]),
-        },
-      ],
-      relations: ['donor'],
-      order: { createdAt: 'DESC' },
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'role'],
     });
+    if (!user || user.role !== UserRole.VOLUNTEER) {
+      throw new ForbiddenException(
+        'Only volunteers can view assigned deliveries',
+      );
+    }
+
+    return (await this.findMine(userId)).filter((donation) =>
+      [DonationStatus.CLAIMED, DonationStatus.PICKED_UP].includes(
+        donation.status,
+      ),
+    );
   }
 
   async getLeaderboard(scope: string = 'all', role?: string) {

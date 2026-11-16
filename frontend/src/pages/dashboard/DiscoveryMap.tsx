@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { getDonations, claimDonation, updateDonationStatus, type Donation } from '../../services/api'
+import { getDonations, getMyDonations, getMyDeliveries, claimDonation, updateDonationStatus, type Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 import { Clock, Shield, AlertTriangle, X, Image as ImageIcon, MapPin, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -42,7 +42,26 @@ export default function DiscoveryMap() {
     const user = JSON.parse(localStorage.getItem('user') || '{}')
     const userRole = (user.role || 'donor').toLowerCase()
     const isVerified = user.isVerified === true
-    const canClaim = (userRole === 'ngo' && isVerified) || userRole === 'volunteer'
+    const canClaim = userRole === 'ngo' && isVerified
+
+    const loadDonations = useCallback(async () => {
+        setLoading(true)
+        try {
+            const data = userRole === 'volunteer'
+                ? await getMyDeliveries()
+                : userRole === 'ngo'
+                    ? await getMyDonations()
+                    : await getDonations({ status: ['AVAILABLE'] })
+            setDonations(data)
+        } catch (error) {
+            const message = error as { response?: { data?: { message?: string } }; message?: string }
+            toast.error('Unable to load donations', {
+                description: message.response?.data?.message || message.message || 'Please try again.',
+            })
+        } finally {
+            setLoading(false)
+        }
+    }, [userRole])
 
     useEffect(() => {
         loadDonations()
@@ -59,42 +78,28 @@ export default function DiscoveryMap() {
 
         // Listen for claimed donations
         const unsubscribeClaimed = socketService.onDonationClaimed((data) => {
-            setDonations((prevDonations) => {
-                 const claimedDonation = prevDonations.find(d => d.id === data.donationId);
-
-                 if (data.claimedBy !== user.id) {
-                     const name = claimedDonation ? claimedDonation.name : 'A donation';
-                     toast.info(`🔔 ${t('foodClaimedAlert')}`, {
-                         description: `${name} has been claimed`,
-                         duration: 3000,
-                     });
-                 }
-
-                 return prevDonations.filter((donation) => donation.id !== data.donationId);
-            });
-            
-            // Close modal if it was for this donation
-            if (selectedDonation?.id === data.donationId) {
-                setSelectedDonation(null)
-                setCurrentImageIndex(0)
+            if (data.claimedBy !== user.id) {
+                toast.info(`🔔 ${t('foodClaimedAlert')}`, {
+                    description: 'A donation has been claimed',
+                    duration: 3000,
+                })
             }
+            void loadDonations()
+            setSelectedDonation((current) =>
+                current?.id === data.donationId ? null : current,
+            )
+        })
+
+        const unsubscribeAssigned = socketService.onVolunteerAssigned(() => {
+            void loadDonations()
         })
 
         return () => {
             unsubscribeCreated()
             unsubscribeClaimed()
+            unsubscribeAssigned()
         }
-    }, [])
-
-    const loadDonations = async () => {
-        setLoading(true)
-        try {
-            const data = await getDonations()
-            setDonations(data)
-        } finally {
-            setLoading(false)
-        }
-    }
+    }, [loadDonations, t, user.id])
 
     const handleClaim = async (donationId: string) => {
         if (!canClaim) return
@@ -193,7 +198,10 @@ export default function DiscoveryMap() {
                 <div className="flex items-center justify-between mb-3">
                     <h1 className="text-lg font-semibold text-gray-900 dark:text-white">{t('discoveryMapTitle')}</h1>
                     <div className="flex gap-2">
-                        {(['all', 'AVAILABLE', 'CLAIMED'] as const).map((f) => (
+                        {(userRole === 'volunteer'
+                            ? (['all', 'CLAIMED'] as const)
+                            : (['all', 'AVAILABLE', 'CLAIMED'] as const)
+                        ).map((f) => (
                             <button
                                 key={f}
                                 onClick={() => setFilter(f)}

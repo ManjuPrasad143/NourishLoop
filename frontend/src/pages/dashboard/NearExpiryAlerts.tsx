@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { AlertTriangle, Clock4, Filter, Loader2, RefreshCw } from 'lucide-react'
-import { getDonations, claimDonation, type Donation } from '../../services/api'
+import { getMyDonations, claimDonation, type Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 import { useTranslation } from 'react-i18next'
 
@@ -19,6 +19,8 @@ export default function NearExpiryAlerts() {
   const [loading, setLoading] = useState(true)
   const [claiming, setClaiming] = useState<string | null>(null)
   const { t } = useTranslation()
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  const canClaim = user.role?.toLowerCase() === 'ngo' && user.isVerified === true
 
   const toAlertRow = (d: Donation): AlertRow | null => {
     const expiryDate = new Date(d.expiryTime)
@@ -37,7 +39,7 @@ export default function NearExpiryAlerts() {
   const loadAlerts = useCallback(async () => {
     setLoading(true)
     try {
-      const allDonations = await getDonations({ status: ['AVAILABLE', 'CLAIMED'] })
+      const allDonations = await getMyDonations()
       const twoHoursMs = 2 * 60 * 60 * 1000
       const now = Date.now()
       const nearExpiry = allDonations
@@ -161,7 +163,7 @@ export default function NearExpiryAlerts() {
                 </span>
               </div>
               <div className="mt-3 flex gap-2">
-                {alert.status === 'AVAILABLE' && (
+                {alert.status === 'AVAILABLE' && canClaim && (
                   <button
                     type="button"
                     className="btn-primary py-2 px-3 text-sm"

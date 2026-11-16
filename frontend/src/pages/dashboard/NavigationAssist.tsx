@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { ExternalLink, Navigation2, MapPin, Loader2, Package, Truck, Clock } from 'lucide-react'
-import { getDonations, type Donation } from '../../services/api'
+import { getMyDonations, getMyDeliveries, type Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 
 const FOOD_EMOJI: Record<string, string> = {
@@ -24,7 +24,7 @@ function getTimeRemaining(expiryTime: Date) {
 }
 
 function toGoogleMapsUrl(destLat: number, destLng: number, destAddress: string) {
-  const destination = destLat && destLng
+  const destination = Number.isFinite(destLat) && Number.isFinite(destLng) && (destLat !== 0 || destLng !== 0)
     ? `${destLat},${destLng}`
     : encodeURIComponent(destAddress)
   return `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`
@@ -37,8 +37,13 @@ export default function NavigationAssist() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await getDonations({ status: ['CLAIMED', 'PICKED_UP'] })
-      setDonations(all)
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      const all = user.role?.toLowerCase() === 'volunteer'
+        ? await getMyDeliveries()
+        : await getMyDonations()
+      setDonations(all.filter((donation) =>
+        donation.status === 'CLAIMED' || donation.status === 'PICKED_UP'
+      ))
     } catch {
       setDonations([])
     } finally {
@@ -114,6 +119,11 @@ export default function NavigationAssist() {
                     <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
                       Donor: {d.donorName} · {d.quantity} {d.unit || 'servings'}
                     </p>
+                    {d.contact?.phone && (
+                      <a className="mt-1 inline-flex text-xs text-emerald-600 dark:text-emerald-400 hover:underline" href={`tel:${d.contact.phone}`}>
+                        Contact: {d.contact.name} · {d.contact.phone}
+                      </a>
+                    )}
                   </div>
 
                   <a

@@ -185,6 +185,16 @@ export class DonationsController {
     return this.donationsService.getVolunteerDeliveries(req.user.userId);
   }
 
+  @Get('mine')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get donations visible to the authenticated user',
+  })
+  async findMine(@Req() req: any) {
+    return this.donationsService.findMine(req.user.userId);
+  }
+
   // ─── PARAMETERISED ROUTES ─────────────────────────────────────────────────
 
   @Post()

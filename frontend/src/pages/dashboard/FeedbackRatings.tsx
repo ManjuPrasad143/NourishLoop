@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Star, MessageCircle, Loader2, AlertCircle, TrendingUp } from 'lucide-react'
-import { getDonations, createFeedback, getFeedbackForDonation, getDonorAverageRating, type Donation, type FeedbackItem } from '../../services/api'
+import { getMyDonations, createFeedback, getFeedbackForDonation, getDonorAverageRating, type Donation, type FeedbackItem } from '../../services/api'
 import { useTranslation } from 'react-i18next'
 
 export default function FeedbackRatings() {
@@ -28,7 +28,7 @@ export default function FeedbackRatings() {
     setLoading(true)
     setError(null)
     try {
-      const allDonations = await getDonations()
+      const allDonations = await getMyDonations()
       // Show only delivered donations that the current NGO claimed
       const delivered = allDonations.filter((d: Donation) =>
         d.status === 'DELIVERED' && (!isNGO || d.claimedById === user.id)

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { getDonations, claimDonation, type Donation } from '../../services/api'
+import { getMyDonations, claimDonation, type Donation } from '../../services/api'
 import { socketService } from '../../services/socket'
 import { Map, TrendingUp, Clock, X, Image as ImageIcon, Shield, CheckCircle2, MapPin, ChevronLeft, ChevronRight, Navigation2, Radio } from 'lucide-react'
 import { toast } from 'sonner'
@@ -31,6 +31,17 @@ const pickupIcon = new L.DivIcon({
   iconSize: [14, 14],
   iconAnchor: [7, 7],
 })
+
+function getDirectionsUrl(location: Donation['location']) {
+  const hasCoordinates =
+    Number.isFinite(location?.lat) &&
+    Number.isFinite(location?.lng) &&
+    (location.lat !== 0 || location.lng !== 0)
+  const destination = hasCoordinates
+    ? `${location.lat},${location.lng}`
+    : location?.address || ''
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+}
 
 function MapFollower({ position }: { position: [number, number] }) {
   const map = useMap()
@@ -86,18 +97,19 @@ export default function NGODashboard() {
   // Cleanup tracking subscription on unmount
   useEffect(() => () => { if (trackingUnsubRef.current) trackingUnsubRef.current() }, [])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getDonations({
-        role: 'ngo',
-        userId: user.id
-      })
+      const data = await getMyDonations()
       setDonations(data)
+    } catch (error) {
+      toast.error('Unable to load donations', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     load()
@@ -114,33 +126,23 @@ export default function NGODashboard() {
 
     // Listen for claimed donations
     const unsubscribeClaimed = socketService.onDonationClaimed((data) => {
-      // Remove the claimed donation from state and show its name (skip toast for own claims)
-      setDonations((prevDonations) => {
-         const claimedDonation = prevDonations.find(d => d.id === data.donationId);
-
-         if (data.claimedBy !== user.id) {
-           const name = claimedDonation ? claimedDonation.name : 'A donation';
-           toast.info(`🔔 ${t('foodClaimedAlert')}`, {
-             description: `${name} has been claimed`,
-             duration: 3000,
-           });
-         }
-
-         return prevDonations.filter((donation) => donation.id !== data.donationId);
-      })
-      
-      // Close modal if it was for this donation
-      if (selectedDonation?.id === data.donationId) {
-        setSelectedDonation(null)
-        setCurrentImageIndex(0)
+      if (data.claimedBy !== user.id) {
+        toast.info(`🔔 ${t('foodClaimedAlert')}`, {
+          description: 'A donation has been claimed',
+          duration: 3000,
+        })
       }
+      void load()
+      setSelectedDonation((current) =>
+        current?.id === data.donationId ? null : current,
+      )
     })
 
     return () => {
       unsubscribeCreated()
       unsubscribeClaimed()
     }
-  }, [])
+  }, [load, t, user.id])
 
   const availableCount = donations.filter((d) => d.status === 'AVAILABLE').length
   const claimedCount = donations.filter((d) => d.status === 'CLAIMED' || d.status === 'PICKED_UP').length
@@ -497,6 +499,17 @@ export default function NGODashboard() {
                       <span>Trust: {selectedDonation.donorTrustScore?.toFixed(1) || 'N/A'}</span>
                     </div>
                   </div>
+                  {selectedDonation.contact && (
+                    <div className="p-3 bg-gray-100/80 dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-800">
+                      <p className="text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-1">{t('contact')}</p>
+                      <p className="text-sm text-gray-900 dark:text-white font-medium">{selectedDonation.contact.name}</p>
+                      {selectedDonation.contact.phone && (
+                        <a className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline" href={`tel:${selectedDonation.contact.phone}`}>
+                          {selectedDonation.contact.phone}
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -536,6 +549,15 @@ export default function NGODashboard() {
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">{t('pickupLocation')}</p>
                   <p className="text-sm text-gray-700 dark:text-slate-300">📍 {selectedDonation.location?.address || 'Location not specified'}</p>
+                  <a
+                    className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:underline"
+                    href={getDirectionsUrl(selectedDonation.location)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Navigation2 className="h-4 w-4" />
+                    {t('directions')}
+                  </a>
                 </div>
 
                 {/* Time */}

@@ -3,10 +3,14 @@ import { render } from '@testing-library/react'
 import VolunteerDashboard from '../../../pages/dashboard/VolunteerDashboard'
 
 vi.mock('../../../services/api', () => ({
-  getDonations: vi.fn().mockResolvedValue([
-    { id: '1', status: 'claimed', location: { lat: 28.6139, lng: 77.2090 } }
+  getMyDeliveries: vi.fn().mockResolvedValue([
+    { id: '1', status: 'CLAIMED', location: { lat: 28.6139, lng: 77.2090 } }
   ]),
+  getCompletedTrips: vi.fn().mockResolvedValue([]),
+  getUserProfile: vi.fn().mockResolvedValue({ id: '1', isAvailable: false }),
   updateDonationStatus: vi.fn(),
+  updateUserProfile: vi.fn(),
+  toggleAvailability: vi.fn(),
 }))
 
 describe('VolunteerDashboard - Volunteer Task Management', () => {

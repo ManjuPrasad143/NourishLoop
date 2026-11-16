@@ -3,9 +3,9 @@ import { render } from '@testing-library/react'
 import History from '../../../pages/dashboard/History'
 
 vi.mock('../../../services/api', () => ({
-  getDonations: vi.fn().mockResolvedValue([
-    { id: '1', createdAt: new Date(), status: 'delivered' },
-    { id: '2', createdAt: new Date(), status: 'delivered' }
+  getMyDonations: vi.fn().mockResolvedValue([
+    { id: '1', createdAt: new Date(), status: 'DELIVERED' },
+    { id: '2', createdAt: new Date(), status: 'DELIVERED' }
   ]),
 }))
 
