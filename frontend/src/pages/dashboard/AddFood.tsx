@@ -309,14 +309,31 @@ export default function AddFood() {
         !timeStatus.invalidTime &&
         !timeStatus.insufficientWindow &&
         !timeStatus.futureTime
+    const preparationIssue =
+        !formData.preparationTime
+            ? t('whenPrepared')
+            : timeStatus?.invalidTime
+                ? t('invalidPreparationTime')
+                : timeStatus?.futureTime
+                    ? t('prepTimeError')
+                    : timeStatus?.expired
+                        ? t('exceededSafeWindow', {
+                            foodType: formData.foodType,
+                            hours: selectedFoodType?.expiryHours,
+                        })
+                        : timeStatus?.insufficientWindow
+                            ? t('minimumSafeWindow', { hours: timeStatus.minimumRemainingHours })
+                            : null
     const incompleteRequirements = [
         !formData.foodType && t('foodType'),
         !formData.foodName.trim() && t('foodName'),
         Number(formData.quantity) <= 0 && t('quantity'),
-        !formData.preparationTime && t('whenPrepared'),
+        preparationIssue,
         !location && t('pickupLocationLabel'),
         !hygieneComplete && t('hygieneChecklist'),
+        (!donorId || !donorName) && t('missingDonorInfo'),
     ].filter(Boolean)
+    const totalRequirements = 7
 
     return (
         <div className="max-w-2xl mx-auto">
@@ -335,11 +352,14 @@ export default function AddFood() {
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
                         <div
                             className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all"
-                            style={{ width: `${((6 - incompleteRequirements.length) / 6) * 100}%` }}
+                            style={{ width: `${((totalRequirements - incompleteRequirements.length) / totalRequirements) * 100}%` }}
                         />
                     </div>
                     <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-                        {t('requirementsComplete', { complete: 6 - incompleteRequirements.length, total: 6 })}
+                        {t('requirementsComplete', {
+                            complete: totalRequirements - incompleteRequirements.length,
+                            total: totalRequirements,
+                        })}
                     </span>
                 </div>
             </header>

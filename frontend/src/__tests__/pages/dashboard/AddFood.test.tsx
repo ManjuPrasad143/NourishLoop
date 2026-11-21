@@ -142,6 +142,9 @@ describe('AddFood - Food Donation Form', () => {
     const { container } = render(<AddFood />)
     const publishButton = screen.getByRole('button', { name: 'publishDonation' })
     expect(publishButton).toBeDisabled()
+    expect(screen.getByText(/completeBeforePublishing/)).toHaveTextContent(
+      'foodType · foodName · quantity · pickupLocationLabel · hygieneChecklist',
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /raw/i }))
     fireEvent.change(container.querySelector('[name="foodName"]')!, {
@@ -184,7 +187,7 @@ describe('AddFood - Food Donation Form', () => {
       .slice(0, 16)
     fireEvent.change(preparationTime, { target: { value: localInputValue } })
 
-    expect(screen.getByText('minimumSafeWindow')).toBeInTheDocument()
+    expect(screen.getAllByText('minimumSafeWindow').length).toBeGreaterThan(0)
     expect(screen.queryByText(/safeFor/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'publishDonation' })).toBeDisabled()
   })
