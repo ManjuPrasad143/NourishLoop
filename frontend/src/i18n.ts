@@ -221,7 +221,7 @@ export const enStrings: Record<string, string> = {
   shareSurplusFoodNeed: 'Share surplus food with those in need',
   prepTimeError: 'Preparation time cannot be in the future',
   invalidPreparationTime: 'Enter a valid preparation date and time.',
-  preparationTimeHint: 'Times use your local timezone. The current time is selected by default; adjust it if needed.',
+  preparationTimeHint: 'Optional. If left blank, the current time is used. Times use your local timezone.',
   minimumSafeWindow: 'This food needs at least {{hours}} safe hours remaining. Choose a newer preparation time.',
   exceededSafeWindow: 'This {{foodType}} food has exceeded the safe consumption window of {{hours}} hours',
   selectPickupLocation: 'Please select a pickup location on the map',

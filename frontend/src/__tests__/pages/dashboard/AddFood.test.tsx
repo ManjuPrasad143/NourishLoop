@@ -119,6 +119,46 @@ describe('AddFood - Food Donation Form', () => {
     })
   })
 
+  it('allows publishing without a preparation time and uses the current time', async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: { latitude: 12.9716, longitude: 77.5946 } as GeolocationCoordinates,
+        timestamp: Date.now(),
+        toJSON: () => ({}),
+      })
+    })
+    navigator.geolocation.getCurrentPosition = getCurrentPosition
+
+    const { container } = render(<AddFood />)
+    fireEvent.click(screen.getByRole('button', { name: /raw/i }))
+    fireEvent.change(container.querySelector('[name="foodName"]')!, {
+      target: { value: 'Fresh vegetables' },
+    })
+    fireEvent.change(container.querySelector('[name="preparationTime"]')!, {
+      target: { value: '' },
+    })
+    fireEvent.change(container.querySelector('[name="quantity"]')!, {
+      target: { value: '4' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'useMyLocation' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'keptCoveredAlways' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'cleanFoodSafe' }))
+
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled())
+
+    const publishButton = screen.getByRole('button', { name: 'publishDonation' })
+    expect(publishButton).toBeEnabled()
+    const beforeSubmit = Date.now()
+    fireEvent.click(publishButton)
+
+    await waitFor(() => expect(createDonation).toHaveBeenCalled())
+    const [payload] = vi.mocked(createDonation).mock.calls[0]
+    const preparationTime = new Date(payload.preparationTime).getTime()
+    expect(preparationTime).toBeGreaterThanOrEqual(beforeSubmit - 1000)
+    expect(preparationTime).toBeLessThanOrEqual(Date.now())
+    expect(new Date(payload.expiryTime).getTime() - preparationTime).toBe(24 * 60 * 60 * 1000)
+  })
+
   it('should have image upload input for food photos', () => {
     const { container } = render(<AddFood />)
     const fileInputs = container.querySelectorAll('input[type="file"]')

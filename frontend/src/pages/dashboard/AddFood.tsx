@@ -155,9 +155,11 @@ export default function AddFood() {
     }
 
     const getRemainingTime = () => {
-        if (!formData.preparationTime || !selectedFoodType) return null
+        if (!selectedFoodType) return null
 
-        const prepTime = new Date(formData.preparationTime)
+        const prepTime = formData.preparationTime
+            ? new Date(formData.preparationTime)
+            : new Date()
         const now = new Date()
 
         if (!Number.isFinite(prepTime.getTime())) {
@@ -258,7 +260,9 @@ export default function AddFood() {
 
         try {
             // Calculate expiry time based on preparation time and food type
-            const prepTime = new Date(formData.preparationTime);
+            const prepTime = formData.preparationTime
+                ? new Date(formData.preparationTime)
+                : new Date();
             const expiryTime = new Date(prepTime.getTime() + (selectedFoodType!.expiryHours * 60 * 60 * 1000));
 
             // Correctly constructing the payload and passing images
@@ -277,7 +281,7 @@ export default function AddFood() {
                     keptCovered: formData.keptCovered,
                     containerClean: formData.containerClean,
                 },
-                preparationTime: new Date(formData.preparationTime),
+                preparationTime: prepTime,
                 expiryTime: expiryTime,
             };
 
@@ -300,7 +304,6 @@ export default function AddFood() {
         formData.foodType &&
         formData.foodName.trim() &&
         Number(formData.quantity) > 0 &&
-        formData.preparationTime &&
         location &&
         donorId &&
         donorName &&
@@ -309,21 +312,18 @@ export default function AddFood() {
         !timeStatus.invalidTime &&
         !timeStatus.insufficientWindow &&
         !timeStatus.futureTime
-    const preparationIssue =
-        !formData.preparationTime
-            ? t('whenPrepared')
-            : timeStatus?.invalidTime
-                ? t('invalidPreparationTime')
-                : timeStatus?.futureTime
-                    ? t('prepTimeError')
-                    : timeStatus?.expired
-                        ? t('exceededSafeWindow', {
-                            foodType: formData.foodType,
-                            hours: selectedFoodType?.expiryHours,
-                        })
-                        : timeStatus?.insufficientWindow
-                            ? t('minimumSafeWindow', { hours: timeStatus.minimumRemainingHours })
-                            : null
+    const preparationIssue = timeStatus?.invalidTime
+        ? t('invalidPreparationTime')
+        : timeStatus?.futureTime
+            ? t('prepTimeError')
+            : timeStatus?.expired
+                ? t('exceededSafeWindow', {
+                    foodType: formData.foodType,
+                    hours: selectedFoodType?.expiryHours,
+                })
+                : timeStatus?.insufficientWindow
+                    ? t('minimumSafeWindow', { hours: timeStatus.minimumRemainingHours })
+                    : null
     const incompleteRequirements = [
         !formData.foodType && t('foodType'),
         !formData.foodName.trim() && t('foodName'),
@@ -403,7 +403,9 @@ export default function AddFood() {
 
                 {/* Preparation Time */}
                 <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl p-5">
-                    <label className="block text-sm text-gray-500 dark:text-slate-400 mb-2">{t('whenPrepared')}</label>
+                    <label className="block text-sm text-gray-500 dark:text-slate-400 mb-2">
+                        {t('whenPrepared')} <span className="text-gray-400 dark:text-slate-500">({t('optional')})</span>
+                    </label>
                     <input
                         type="datetime-local"
                         name="preparationTime"
@@ -411,7 +413,6 @@ export default function AddFood() {
                         onChange={handleChange}
                         max={toLocalDateTime(new Date())}
                         step={60}
-                        required
                         className="w-full bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-3 text-gray-900 dark:text-white focus:border-emerald-500 focus:outline-none"
                     />
                     <p className="mt-2 text-xs text-gray-500 dark:text-slate-500">{t('preparationTimeHint')}</p>
