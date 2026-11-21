@@ -39,8 +39,25 @@ function getDirectionsUrl(location: Donation['location']) {
     (location.lat !== 0 || location.lng !== 0)
   const destination = hasCoordinates
     ? `${location.lat},${location.lng}`
-    : location?.address || ''
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+    : location?.address && location.address !== 'Unknown Location'
+      ? location.address
+      : null
+  return destination
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+    : null
+}
+
+function getPickupLocation(location?: Donation['location']) {
+  if (!location) return null
+
+  const hasCoordinates =
+    Number.isFinite(location.lat) &&
+    Number.isFinite(location.lng) &&
+    (location.lat !== 0 || location.lng !== 0)
+
+  if (location.address && location.address !== 'Unknown Location') return location.address
+  if (hasCoordinates) return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`
+  return null
 }
 
 function MapFollower({ position }: { position: [number, number] }) {
@@ -147,6 +164,9 @@ export default function NGODashboard() {
   const availableCount = donations.filter((d) => d.status === 'AVAILABLE').length
   const claimedCount = donations.filter((d) => d.status === 'CLAIMED' || d.status === 'PICKED_UP').length
   const deliveredCount = donations.filter((d) => d.status === 'DELIVERED').length
+  const selectedDonationDirectionsUrl = selectedDonation
+    ? getDirectionsUrl(selectedDonation.location)
+    : null
 
   const getTimeRemaining = (expiryTime: Date) => {
     const now = new Date()
@@ -329,6 +349,7 @@ export default function NGODashboard() {
         <div className="divide-y divide-gray-200 dark:divide-slate-800">
           {donations.filter(d => d.status === 'AVAILABLE').slice(0, 5).map((donation) => {
             const timeLeft = getTimeRemaining(donation.expiryTime)
+            const directionsUrl = getDirectionsUrl(donation.location)
             return (
               <div key={donation.id} className="p-4 hover:bg-gray-100/50 dark:bg-slate-800/30 transition-colors">
                 <div className="flex items-center justify-between">
@@ -355,6 +376,23 @@ export default function NGODashboard() {
                       <p className="text-sm text-gray-500 dark:text-slate-500">
                         {donation.quantity} {donation.unit} • {donation.donorName}
                       </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-slate-400">
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {getPickupLocation(donation.location) || t('locationNotSpecified')}
+                        </span>
+                        {directionsUrl && (
+                          <a
+                            className="inline-flex items-center gap-1 text-emerald-600 hover:underline dark:text-emerald-400"
+                            href={directionsUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <Navigation2 className="h-3 w-3" />
+                            {t('directions')}
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -548,16 +586,18 @@ export default function NGODashboard() {
                 {/* Location */}
                 <div>
                   <p className="text-xs text-gray-500 dark:text-slate-400 mb-1">{t('pickupLocation')}</p>
-                  <p className="text-sm text-gray-700 dark:text-slate-300">📍 {selectedDonation.location?.address || 'Location not specified'}</p>
-                  <a
-                    className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:underline"
-                    href={getDirectionsUrl(selectedDonation.location)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Navigation2 className="h-4 w-4" />
-                    {t('directions')}
-                  </a>
+                  <p className="text-sm text-gray-700 dark:text-slate-300">📍 {getPickupLocation(selectedDonation.location) || t('locationNotSpecified')}</p>
+                  {selectedDonationDirectionsUrl && (
+                    <a
+                      className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 hover:underline"
+                      href={selectedDonationDirectionsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Navigation2 className="h-4 w-4" />
+                      {t('directions')}
+                    </a>
+                  )}
                 </div>
 
                 {/* Time */}

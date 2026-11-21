@@ -160,11 +160,24 @@ export default function AddFood() {
         const prepTime = new Date(formData.preparationTime)
         const now = new Date()
 
+        if (!Number.isFinite(prepTime.getTime())) {
+            return {
+                expired: false,
+                futureTime: false,
+                invalidTime: true,
+                insufficientWindow: false,
+                minimumRemainingHours: selectedFoodType.minimumRemainingHours,
+                hours: 0,
+                minutes: 0,
+            }
+        }
+
         // Check if preparation time is in the future
         if (prepTime > now) {
             return {
                 expired: false,
                 futureTime: true,
+                invalidTime: false,
                 insufficientWindow: false,
                 minimumRemainingHours: selectedFoodType.minimumRemainingHours,
                 hours: 0,
@@ -179,6 +192,7 @@ export default function AddFood() {
             return {
                 expired: true,
                 futureTime: false,
+                invalidTime: false,
                 insufficientWindow: false,
                 minimumRemainingHours: selectedFoodType.minimumRemainingHours,
                 hours: 0,
@@ -192,6 +206,7 @@ export default function AddFood() {
         return {
             expired: false,
             futureTime: false,
+            invalidTime: false,
             insufficientWindow: remaining < selectedFoodType.minimumRemainingHours * 60 * 60 * 1000,
             minimumRemainingHours: selectedFoodType.minimumRemainingHours,
             hours,
@@ -205,20 +220,27 @@ export default function AddFood() {
         e.preventDefault()
         setError(null)
 
+        const currentTimeStatus = getRemainingTime()
+
+        if (currentTimeStatus?.invalidTime) {
+            setError(t('invalidPreparationTime'))
+            return
+        }
+
         // Check if time is in the future
-        if (timeStatus?.futureTime) {
+        if (currentTimeStatus?.futureTime) {
             setError(t('prepTimeError'))
             return
         }
 
         // Validate time safety
-        if (timeStatus?.expired) {
+        if (currentTimeStatus?.expired) {
             setError(t('exceededSafeWindow', { foodType: formData.foodType, hours: selectedFoodType?.expiryHours }))
             return
         }
 
-        if (timeStatus?.insufficientWindow) {
-            setError(t('minimumSafeWindow', { hours: timeStatus.minimumRemainingHours }))
+        if (currentTimeStatus?.insufficientWindow) {
+            setError(t('minimumSafeWindow', { hours: currentTimeStatus.minimumRemainingHours }))
             return
         }
 
@@ -284,6 +306,7 @@ export default function AddFood() {
         donorName &&
         timeStatus &&
         !timeStatus.expired &&
+        !timeStatus.invalidTime &&
         !timeStatus.insufficientWindow &&
         !timeStatus.futureTime
     const incompleteRequirements = [
@@ -367,6 +390,7 @@ export default function AddFood() {
                         value={formData.preparationTime}
                         onChange={handleChange}
                         max={toLocalDateTime(new Date())}
+                        step={60}
                         required
                         className="w-full bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-lg px-4 py-3 text-gray-900 dark:text-white focus:border-emerald-500 focus:outline-none"
                     />
@@ -379,7 +403,13 @@ export default function AddFood() {
                             </p>
                         </div>
                     )}
-                    {timeStatus && !timeStatus.expired && !timeStatus.insufficientWindow && !timeStatus.futureTime && formData.preparationTime && (
+                    {timeStatus?.invalidTime && formData.preparationTime && (
+                        <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-400" />
+                            <p className="text-sm text-red-400">{t('invalidPreparationTime')}</p>
+                        </div>
+                    )}
+                    {timeStatus && !timeStatus.invalidTime && !timeStatus.expired && !timeStatus.insufficientWindow && !timeStatus.futureTime && formData.preparationTime && (
                         <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                             <p className="text-sm text-emerald-400">

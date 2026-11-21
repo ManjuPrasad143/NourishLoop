@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, prefer-const, @typescript-eslint/no-unused-vars */
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import Login from '../../pages/Login'
+import { loginUser } from '../../services/api'
 
 vi.mock('react-router-dom', () => ({
     useNavigate: () => vi.fn(),
@@ -48,5 +49,23 @@ describe('Login - User Authentication', () => {
         const { container } = render(<Login />)
         const links = container.querySelectorAll('a')
         expect(links.length >= 0).toBeTruthy()
+    })
+
+    it('shows a retryable error and clears loading when login times out', async () => {
+        vi.mocked(loginUser).mockRejectedValue(
+            Object.assign(new Error('timeout'), { code: 'ECONNABORTED' }),
+        )
+        render(<Login />)
+
+        fireEvent.change(screen.getByPlaceholderText('emailPlaceholder'), {
+            target: { value: 'user@example.com' },
+        })
+        fireEvent.change(screen.getByPlaceholderText('passwordPlaceholder'), {
+            target: { value: 'password' },
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'signIn' }))
+
+        expect(await screen.findByText('loginTimeoutError')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'signIn' })).toBeEnabled()
     })
 })

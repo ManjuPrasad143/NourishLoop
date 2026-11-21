@@ -129,7 +129,7 @@ export type Badge = {
 
 export const loginUser = async (email: string, password?: string) => {
   if (!password) throw new Error('Password is required');
-  const response = await api.post('/auth/login', { email, password });
+  const response = await api.post('/auth/login', { email, password }, { timeout: 90000 });
   return response.data.data;
 };
 

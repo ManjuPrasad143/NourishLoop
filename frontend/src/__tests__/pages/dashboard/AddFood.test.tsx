@@ -77,6 +77,48 @@ describe('AddFood - Food Donation Form', () => {
     expect(new Date(preparationTime!.value).getTime()).toBeLessThanOrEqual(Date.now())
   })
 
+  it('uses the selected local preparation time when creating the donation', async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: { latitude: 12.9716, longitude: 77.5946 } as GeolocationCoordinates,
+        timestamp: Date.now(),
+        toJSON: () => ({}),
+      })
+    })
+    navigator.geolocation.getCurrentPosition = getCurrentPosition
+
+    const { container } = render(<AddFood />)
+    const selectedLocalTime = new Date(Date.now() - 10 * 60_000)
+    const localInputValue = new Date(
+      selectedLocalTime.getTime() - selectedLocalTime.getTimezoneOffset() * 60_000,
+    ).toISOString().slice(0, 16)
+    const expectedPreparationTime = new Date(localInputValue)
+
+    fireEvent.click(screen.getByRole('button', { name: /raw/i }))
+    fireEvent.change(container.querySelector('[name="foodName"]')!, {
+      target: { value: 'Seasonal fruit' },
+    })
+    fireEvent.change(container.querySelector('[name="preparationTime"]')!, {
+      target: { value: localInputValue },
+    })
+    fireEvent.change(container.querySelector('[name="quantity"]')!, {
+      target: { value: '4' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'useMyLocation' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'keptCoveredAlways' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'cleanFoodSafe' }))
+
+    await waitFor(() => expect(getCurrentPosition).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'publishDonation' }))
+
+    await waitFor(() => {
+      expect(createDonation).toHaveBeenCalledWith(
+        expect.objectContaining({ preparationTime: expectedPreparationTime }),
+        [],
+      )
+    })
+  })
+
   it('should have image upload input for food photos', () => {
     const { container } = render(<AddFood />)
     const fileInputs = container.querySelectorAll('input[type="file"]')

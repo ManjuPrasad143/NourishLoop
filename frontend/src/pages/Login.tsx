@@ -31,8 +31,14 @@ export default function Login() {
         window.location.replace('/dashboard')
       }
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } }; message?: string }
-      const msg = axiosErr.response?.data?.message || axiosErr.message || 'Login failed'
+      const axiosErr = err as {
+        code?: string
+        response?: { data?: { message?: string } }
+        message?: string
+      }
+      const msg = axiosErr.code === 'ECONNABORTED' || axiosErr.code === 'ETIMEDOUT'
+        ? t('loginTimeoutError')
+        : axiosErr.response?.data?.message || axiosErr.message || 'Login failed'
       setError(msg)
     } finally {
       setLoading(false)

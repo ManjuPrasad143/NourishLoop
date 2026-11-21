@@ -43,6 +43,7 @@ describe('ClaimDonation UI Flows', () => {
             quantity: 10,
             unit: 'kg',
             donorName: 'Farm Fresh',
+            location: { lat: 12.2958, lng: 76.6394, address: 'Unknown Location' },
             preparationTime: new Date().toISOString(),
             expiryTime: new Date(Date.now() + 86400000).toISOString(),
         };
@@ -56,6 +57,11 @@ describe('ClaimDonation UI Flows', () => {
         await waitFor(() => {
             expect(screen.getByText('Fresh Veggies')).toBeInTheDocument();
         });
+        expect(screen.getByText('12.29580, 76.63940')).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: /directions/i })).toHaveAttribute(
+            'href',
+            expect.stringContaining('12.2958%2C76.6394'),
+        );
 
         // 1. Click "viewDetails" to open the detail modal housing the claim button
         const viewDetailsButtons = screen.getAllByText('viewDetails');
